@@ -5,7 +5,7 @@ import os
 from sklearn.preprocessing import normalize
 import datetime
 import threading
-from time import sleep
+import time
 import queue
 from pynput import keyboard
 
@@ -17,8 +17,8 @@ class KeyAudio(object):
     def __init__(self):
         print("Instantiating...")
         
-        # I want to record for approximately 300ms for each keypress. This recording should center on the press event.
-        # <---150ms---> KeyPress <---150ms--->
+        # I want to record for approximately 250ms for each keypress. This recording should center on the press event.
+        # <---200ms---> KeyRelease <---50ms--->
         
         self.chunk = 1024
         self.format = pyaudio.paInt16
@@ -26,7 +26,7 @@ class KeyAudio(object):
         self.rate = 44100
         self.delta_ms = 25 # Stream read size in milliseconds
         self.full_record_ms = 250 # Key press audio recording length in milliseconds
-        self.post_press_ms = 150 # Recording time after key press in milliseconds
+        self.post_rel_ms = 50 # Recording time after key release in milliseconds
         
         self.row_size = int(self.rate / self.chunk * self.delta_ms * (1/1000))
         
@@ -34,7 +34,9 @@ class KeyAudio(object):
         self.stream = self.p.open(format = self.format, channels = self.channels, rate = self.rate, input = True, frames_per_buffer = self.chunk)
         
         self.running = False # Keyboard and Audio Log started flag
-        self.released = True # Key release seen after key press flag
+        self.released = True
+        self.start_time = 0.0 # Time key pressed
+        self.max_hold_ms = 500 # Maximum time between hold and release for recording to be valid
         
         self.frames = [] # A list of delta_ms raw byte samples
         self.df_list = [] # Holds list of dictionaries until user saves as dataframe
@@ -57,20 +59,27 @@ class KeyAudio(object):
             listener.join()
       
     # Keyboard Press
-    def on_press(self, key): 
-        if not(self.released):
-            print("Not released")
-	
+    def on_press(self, key):
+        if self.released == True:
+            self.start_time = time.time()
+            
+            self.released = False
+            
+    def on_release(self, key):
+        self.released = True
+        
         # Escape Pressed
         if key == keyboard.Key.esc:
             self.running = False
             return False # Stop Key Listener
-        elif self.released: # Disallow holding hey to repeatedly record audio logs
+        else:
+            # Time between press and release should be less than some delta threshold
+            if time.time() - self.start_time > self.max_hold_ms/1000:
+                return
+            
             print(key)
             
-            self.released = False
-            
-            sleep(self.post_press_ms/1000) # Keep recording audio for some delta defined after the key is pressed
+            time.sleep(self.post_rel_ms/1000) # Keep recording audio for some delta defined after the key is pressed
             
             if self.q.qsize() != round(self.full_record_ms/self.delta_ms):
                 print("Error: Incorrect queue size: {}".format(self.q.qsize()))
@@ -90,9 +99,6 @@ class KeyAudio(object):
                 self.save_dataframe()
             
             self.key_cnt += 1 # New keypress recorded
-            
-    def on_release(self, key):
-        self.released = True
             
     def key_to_string(self, key):
         key_str = ""
