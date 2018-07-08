@@ -34,6 +34,7 @@ class KeyAudio(object):
         self.stream = self.p.open(format = self.format, channels = self.channels, rate = self.rate, input = True, frames_per_buffer = self.chunk)
         
         self.running = False # Keyboard and Audio Log started flag
+        self.released = True # Key release seen after key press flag
         
         self.frames = [] # A list of delta_ms raw byte samples
         self.df_list = [] # Holds list of dictionaries until user saves as dataframe
@@ -52,18 +53,23 @@ class KeyAudio(object):
         threads.append(t)
         t.start()
 
-        with keyboard.Listener(on_press=self.on_press) as listener:
+        with keyboard.Listener(on_press=self.on_press, on_release=self.on_release) as listener:
             listener.join()
       
     # Keyboard Press
-    def on_press(self, key):
-        print(key)
-        
+    def on_press(self, key): 
+        if not(self.released):
+            print("Not released")
+	
         # Escape Pressed
         if key == keyboard.Key.esc:
             self.running = False
             return False # Stop Key Listener
-        else:
+        elif self.released: # Disallow holding hey to repeatedly record audio logs
+            print(key)
+            
+            self.released = False
+            
             sleep(self.post_press_ms/1000) # Keep recording audio for some delta defined after the key is pressed
             
             if self.q.qsize() != round(self.full_record_ms/self.delta_ms):
@@ -75,14 +81,26 @@ class KeyAudio(object):
             frames_int = np.frombuffer(frame_bytes, dtype=np.int16) # convert to int16
             
             # Create dictionary for each sample and append to list (used later to create dataframe)
-            record_sample = [{'key': key, 'data': frames_int, 'raw': frame_bytes, 'timestamp': datetime.datetime.utcnow()}]
+            record_sample = [{'key': self.key_to_string(key), 'data': frames_int, 'raw': frame_bytes, 'timestamp': datetime.datetime.utcnow()}]
             self.df_list.extend(record_sample)
             
+            # Save data to dataframe
             if self.key_cnt % 50 == 49:
                 print("Saving dataframe. Session key count: {}".format(self.key_cnt))
                 self.save_dataframe()
             
             self.key_cnt += 1 # New keypress recorded
+            
+    def on_release(self, key):
+        self.released = True
+            
+    def key_to_string(self, key):
+        key_str = ""
+        if str(type(key)) == "<enum 'Key'>":
+            key_str = key.name # Type <enum 'Key'
+        else:
+            key_str = key.char # Type pynput.keyboard._win32.KeyCode
+        return key_str
             
     def log(self):
         while self.running:
