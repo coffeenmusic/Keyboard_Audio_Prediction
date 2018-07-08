@@ -33,6 +33,7 @@ class KeyAudio(object):
         self.p = pyaudio.PyAudio()
         self.stream = self.p.open(format = self.format, channels = self.channels, rate = self.rate, input = True, frames_per_buffer = self.chunk)
         
+        self.saving = False # Saving dataframe flag
         self.running = False # Keyboard and Audio Log started flag
         self.released = True
         self.start_time = 0.0 # Time key pressed
@@ -76,6 +77,9 @@ class KeyAudio(object):
             # Time between press and release should be less than some delta threshold
             if time.time() - self.start_time > self.max_hold_ms/1000:
                 return
+            # Don't record data when saving
+            if self.saving:
+                return
             
             print(key)
             
@@ -94,7 +98,7 @@ class KeyAudio(object):
             self.df_list.extend(record_sample)
             
             # Save data to dataframe
-            if self.key_cnt % 50 == 49:
+            if self.key_cnt % 300 == 299:
                 print("Saving dataframe. Session key count: {}".format(self.key_cnt))
                 self.save_dataframe()
             
@@ -131,6 +135,7 @@ class KeyAudio(object):
         waveFile.close()
         
     def save_dataframe(self, filename='DataSet/data.pkl'):
+        self.saving = True
         df = pd.DataFrame.from_records(self.df_list)
         
         # Get existing data and combine with new data
@@ -142,6 +147,8 @@ class KeyAudio(object):
         df.to_pickle(filename)
         
         self.df_list = [] # Clear existing list data
+        
+        self.saving = False
 		
 		
 key = KeyAudio()
