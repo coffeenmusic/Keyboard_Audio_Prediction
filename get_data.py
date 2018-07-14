@@ -13,6 +13,10 @@ pa = pyaudio.PyAudio()
 print(pa.get_default_input_device_info())
 
 
+import threading
+import time
+import queue
+
 class KeyAudio(object):
     def __init__(self):
         print("Instantiating...")
@@ -44,6 +48,9 @@ class KeyAudio(object):
         self.q = queue.Queue() # Use Queue as FIFO for recorded frames
         
         self.key_cnt = 0 # Track the number of recorded keypresses for this session
+        
+        self.dataset_subdir = 'DataSet/'
+        self.save_cnt = 0
     
     # Start Listening for Keyboard Presses and recording Audio
     def startListener(self):
@@ -98,9 +105,10 @@ class KeyAudio(object):
             self.df_list.extend(record_sample)
             
             # Save data to dataframe
-            if self.key_cnt % 300 == 299:
+            if self.key_cnt % 500 == 499:
                 print("Saving dataframe. Session key count: {}".format(self.key_cnt))
-                self.save_dataframe()
+                filename = self.dataset_subdir + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + '_' + str(self.save_cnt) + '.pkl'
+                self.save_dataframe(filename=filename)
             
             self.key_cnt += 1 # New keypress recorded
             
@@ -137,11 +145,6 @@ class KeyAudio(object):
     def save_dataframe(self, filename='DataSet/data.pkl'):
         self.saving = True
         df = pd.DataFrame.from_records(self.df_list)
-        
-        # Get existing data and combine with new data
-        if os.path.isfile(filename):
-            df_saved = pd.read_pickle(filename)
-            df = df_saved.append(df, ignore_index=True)
             
         # Save to pickle file
         df.to_pickle(filename)
@@ -149,6 +152,8 @@ class KeyAudio(object):
         self.df_list = [] # Clear existing list data
         
         self.saving = False
+        
+        self.save_cnt += 1
 		
 		
 key = KeyAudio()
