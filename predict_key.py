@@ -28,13 +28,10 @@ data_width = len(df_norm['data'][0])
     df          Key press audio sample as dataframe
 """
 def normalize_data(df):
-    #df = df.append(df_norm[:2], ignore_index=True)
-
     input_data = df['data'].values  # Convert to numpy array
     input_data = np.stack(input_data, axis=0)  # Create numpy matrix from array of arrays
 
     # Normalize data
-    #scaler = preprocessing.MinMaxScaler(feature_range=(0, 1))
     normalized_data = scaler.transform(input_data)
 
     normalized_data = normalized_data.reshape((normalized_data.shape[0], normalized_data.shape[1], 1))
@@ -56,24 +53,43 @@ with tf.Session() as sess:
     key.startListener()
     count = 1
     correct_cnt = 0
+    batch = pd.DataFrame({'data': []})
     while key.running:
         if key.sample_ready == True:
             df = pd.DataFrame.from_records(key.df_list) # Key press audio sample
 
-            normalized_data = normalize_data(df) # Normalized audio sample
-            print(normalized_data)
+            if len(batch) == 0 or len(batch)%100 == 0:
+                batch = df
+            else:
+                batch = batch.append(df, ignore_index=True)
 
-            # Make Prediction
-            feed_dict = {x: normalized_data, keep_prob: 1.0}
-            prediction = sess.run(predicted, feed_dict=feed_dict).squeeze()
 
-            print(prediction)
-            predicted_key = labels[np.argmax(prediction)]
-            print('Prediction: {0}'.format(predicted_key))
 
-            if df['key'].values[0] == predicted_key:
-                correct_cnt += 1
-            print('Count: {0}, Accuracy: {1:0.2f}'.format(count, correct_cnt/count))
+            if (len(batch)-1)%100 == 99:
+                normalized_data = normalize_data(batch) # Normalized audio sample
+                print(normalized_data)
+
+                # Make Prediction
+                feed_dict = {x: normalized_data, keep_prob: 1.0}
+                prediction = sess.run(predicted, feed_dict=feed_dict).squeeze()
+
+                correct_cnt = 0
+                for i, r in enumerate(prediction):
+                    actual_key = batch['key'].values[i]
+                    pred_key = labels[np.argmax(r)]
+                    print('Key: {0}, Prediction: {1}, Probability: {2:0.2f}'.format(actual_key, pred_key,
+                                                                                    r[np.argmax(r)]))
+                    if actual_key == pred_key:
+                        correct_cnt += 1
+                print('Accuracy: {}'.format(correct_cnt / len(batch)))
+
+            # print(prediction)
+            # predicted_key = labels[np.argmax(prediction)]
+            # print('Prediction: {0}'.format(predicted_key))
+            #
+            # if df['key'].values[0] == predicted_key:
+            #     correct_cnt += 1
+            # print('Count: {0}, Accuracy: {1:0.2f}'.format(count, correct_cnt/count))
 
             # Reset relevant class parameters
             key.df_list = []
