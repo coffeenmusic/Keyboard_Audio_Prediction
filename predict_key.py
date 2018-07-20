@@ -9,6 +9,7 @@ import pickle
 dataset_dir = 'DataSet/'
 
 labels = pickle.load(open(os.path.join(dataset_dir, 'labels.p'), "rb"))
+print(labels)
 
 # Import a subset of the training set.
 # This will be used for normalizing the sampled data
@@ -57,6 +58,8 @@ with tf.Session() as sess:
     while key.running:
         if key.sample_ready == True:
             df = pd.DataFrame.from_records(key.df_list) # Key press audio sample
+            if not(df['key'].values[0] in labels):
+                continue
 
             if len(batch) == 0 or len(batch)%100 == 0:
                 batch = df
@@ -66,6 +69,7 @@ with tf.Session() as sess:
 
 
             if (len(batch)-1)%100 == 99:
+                batch.to_pickle(os.path.join(dataset_dir, "predict.pkl"))
                 normalized_data = normalize_data(batch) # Normalized audio sample
                 print(normalized_data)
 
