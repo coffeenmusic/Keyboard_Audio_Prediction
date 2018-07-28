@@ -26,7 +26,6 @@ class KeyAudio(object):
         self.rate = 44100
         self.delta_ms = 25 # Stream read size in milliseconds
         self.full_record_ms = 250 # Key press audio recording length in milliseconds
-        self.post_rel_ms = 50 # Recording time after key release in milliseconds
         
         self.row_size = int(self.rate / self.chunk * self.delta_ms * (1/1000))
         
@@ -37,9 +36,10 @@ class KeyAudio(object):
         self.running = False # Keyboard and Audio Log started flag
         self.released = True
         self.start_time = 0.0 # Time key pressed
-        self.max_hold_ms = 500 # Maximum time between hold and release for recording to be valid
-        
-        self.frames = [] # A list of delta_ms raw byte samples
+        self.max_hold_ms = 200 # Maximum time between hold and release for recording to be valid (Should be less than full_record_ms)
+        self.record_window = False
+
+        self.frame_list = []
         self.df_list = [] # Holds list of dictionaries until user saves as dataframe
         self.q = queue.Queue() # Use Queue as FIFO for recorded frames
         
@@ -51,6 +51,8 @@ class KeyAudio(object):
         self.sample_ready = False
         self.mode = mode
         self.save_wav = save_wav
+
+        self.rec_cnt = 0
     
     def get_dev_info(self):
         return self.p.get_default_input_device_info()
@@ -82,6 +84,7 @@ class KeyAudio(object):
             self.start_time = time.time()
             
             self.released = False
+            self.record_window = True # Add frames to frame_list when True
             
     def on_release(self, key):
         self.released = True
@@ -92,30 +95,39 @@ class KeyAudio(object):
             return False # Stop Key Listener
         else:
             # Time between press and release should be less than some delta threshold
-            if time.time() - self.start_time > self.max_hold_ms/1000:
+            delta_t = time.time() - self.start_time # Time between press and release
+            if delta_t > self.max_hold_ms/1000:
+                print('Maximum hold time exceeded')
                 return
+
             # Don't record data when saving
             if self.saving:
                 return
             
             print(key)
-            
-            time.sleep(self.post_rel_ms/1000) # Keep recording audio for some delta defined after the key is pressed
-            
+
+            # Keep recording audio for some delta defined after the key is pressed
+            post_rel_ms = round(self.full_record_ms - delta_t*1000)
+            if post_rel_ms > self.delta_ms:
+                time.sleep(post_rel_ms/1000)
+
+            self.record_window = False # Add frames to frame_list when True
+
             if self.q.qsize() != round(self.full_record_ms/self.delta_ms):
                 print("Error: Incorrect queue size: {}".format(self.q.qsize()))
                 return
-            
-            self.frames = list(self.q.queue)
-            frame_bytes = bytearray([byte for row in self.frames for byte in row])
-            frames_int = np.frombuffer(frame_bytes, dtype=np.int16) # convert to int16
 
-            if self.save_wav:
-                self.save_data_as_wav(frame_bytes)
+            for i, frame in enumerate(self.frame_list):
+                frame_bytes = bytearray([byte for row in frame for byte in row])
+                frames_int = np.frombuffer(frame_bytes, dtype=np.int16) # convert to int16
+
+                if self.save_wav:
+                    wav_name = "file" + str(i) + ".wav"
+                    self.save_data_as_wav(frame_bytes, filename=wav_name)
             
-            # Create dictionary for each sample and append to list (used later to create dataframe)
-            record_sample = [{'key': self.key_to_string(key), 'data': frames_int, 'raw': frame_bytes, 'timestamp': datetime.datetime.utcnow()}]
-            self.df_list.extend(record_sample)
+                # Create dictionary for each sample and append to list (used later to create dataframe)
+                record_sample = [{'key': self.key_to_string(key), 'data': frames_int, 'raw': frame_bytes, 'timestamp': datetime.datetime.utcnow()}]
+                self.df_list.extend(record_sample)
 
             if self.mode == "Sample":
                 self.sample_ready = True
@@ -123,11 +135,12 @@ class KeyAudio(object):
 
             # Save data to dataframe
             if self.key_cnt % self.save_freq == self.save_freq - 1:
-                print("Saving dataframe. Session key count: {}".format(self.key_cnt))
+                print("Saving dataframe. Session key count: {}, Sample Count: {}".format(self.key_cnt, len(self.df_list)))
                 filename = self.dataset_subdir + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + '_' + str(self.save_cnt) + '.pkl'
                 self.save_dataframe(filename=filename)
-            
+
             self.key_cnt += 1 # New keypress recorded
+            self.frame_list = []
             
     def key_to_string(self, key):
         key_str = ""
@@ -144,6 +157,11 @@ class KeyAudio(object):
 
             if self.q.qsize() > round(self.full_record_ms/self.delta_ms):
                 self.q.get()
+
+            if self.record_window:
+                frame = list(self.q.queue) # A list of delta_ms raw byte samples
+                self.frame_list += [frame]
+                self.rec_cnt += 1
 
         # When run complete, stop stream
         self.stream.stop_stream()

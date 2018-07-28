@@ -5,6 +5,7 @@ import numpy as np
 import os
 import pandas as pd
 import pickle
+import time
 
 dataset_dir = 'DataSet/'
 
@@ -38,6 +39,10 @@ def normalize_data(df):
     normalized_data = normalized_data.reshape((normalized_data.shape[0], normalized_data.shape[1], 1))
     return normalized_data
 
+def reset_sample():
+    key.df_list = []
+    key.sample_ready = False
+
 # Load TensorFlow Graph
 loader = tf.train.import_meta_graph('checkpoints/model.ckpt.meta')
 with tf.Session() as sess:
@@ -52,50 +57,42 @@ with tf.Session() as sess:
     key = KeyAudio(mode="Sample", save_wav=False)
     print(key.get_dev_info())
     key.startListener()
+
     count = 1
     correct_cnt = 0
-    batch = pd.DataFrame({'data': []})
     while key.running:
         if key.sample_ready == True:
             df = pd.DataFrame.from_records(key.df_list) # Key press audio sample
+
+            # Ignore keys not in the label classes
             if not(df['key'].values[0] in labels):
+                print("Key skipped. Not in label set.")
+                reset_sample()
                 continue
 
-            if len(batch) == 0 or len(batch)%100 == 0:
-                batch = df
-            else:
-                batch = batch.append(df, ignore_index=True)
+            normalized_data = normalize_data(df)  # Normalized audio sample
 
+            # Make Prediction
+            feed_dict = {x: normalized_data, keep_prob: 1.0}
+            prediction = sess.run(predicted, feed_dict=feed_dict).squeeze()
 
+            # for i, r in enumerate(prediction):
+            #     actual_key = df['key'].values[i]
+            #     pred_key = labels[np.argmax(r)]
+            #     print('Key: {0}, Prediction: {1}, Probability: {2:0.2f}'.format(actual_key, pred_key,
+            #                                                                     r[np.argmax(r)]))
+            #     if actual_key == pred_key:
+            #         correct_cnt += 1
+            # print('Accuracy: {}'.format(correct_cnt / len(df)))
 
-            if (len(batch)-1)%100 == 99:
-                batch.to_pickle(os.path.join(dataset_dir, "predict.pkl"))
-                normalized_data = normalize_data(batch) # Normalized audio sample
-                print(normalized_data)
+            print(prediction)
+            predicted_key = labels[np.argmax(prediction)]
+            print('Prediction: {0}'.format(predicted_key))
 
-                # Make Prediction
-                feed_dict = {x: normalized_data, keep_prob: 1.0}
-                prediction = sess.run(predicted, feed_dict=feed_dict).squeeze()
-
-                correct_cnt = 0
-                for i, r in enumerate(prediction):
-                    actual_key = batch['key'].values[i]
-                    pred_key = labels[np.argmax(r)]
-                    print('Key: {0}, Prediction: {1}, Probability: {2:0.2f}'.format(actual_key, pred_key,
-                                                                                    r[np.argmax(r)]))
-                    if actual_key == pred_key:
-                        correct_cnt += 1
-                print('Accuracy: {}'.format(correct_cnt / len(batch)))
-
-            # print(prediction)
-            # predicted_key = labels[np.argmax(prediction)]
-            # print('Prediction: {0}'.format(predicted_key))
-            #
-            # if df['key'].values[0] == predicted_key:
-            #     correct_cnt += 1
-            # print('Count: {0}, Accuracy: {1:0.2f}'.format(count, correct_cnt/count))
+            if df['key'].values[0] == predicted_key:
+                correct_cnt += 1
+            print('Count: {0}, Accuracy: {1:0.2f}'.format(count, correct_cnt/count))
 
             # Reset relevant class parameters
-            key.df_list = []
-            key.sample_ready = False
+            reset_sample()
             count += 1

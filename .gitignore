@@ -1,5 +1,6 @@
 *.wav
 checkpoints/
+Debug/
 
 Archive/
 DataSet/
