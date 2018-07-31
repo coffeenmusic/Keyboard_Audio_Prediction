@@ -37,7 +37,7 @@ class KeyAudio(object):
         self.running = False # Keyboard and Audio Log started flag
         self.released = True
         self.start_time = 0.0 # Time key pressed
-        self.max_hold_ms = 250 # Maximum time between hold and release for recording to be valid (Should be less than full_record_ms)
+        self.max_hold_ms = 400 # Maximum time between hold and release for recording to be valid
         self.record_window = False
 
         self.frame_list = []
@@ -79,6 +79,8 @@ class KeyAudio(object):
     # Keyboard Press
     def on_press(self, key):
         if self.released == True:
+            self.key = key
+
             # if (time.time() - self.k2k_time)*1000 < 1:
             #     self.skip_release = True
             #     return
@@ -115,40 +117,14 @@ class KeyAudio(object):
             # Keep recording audio for some delta defined after the key is pressed
             post_rel_ms = round(self.full_record_ms - delta_t*1000)
             if post_rel_ms > self.delta_ms:
-                sleep_ms = random.randint(0, post_rel_ms)
-                time.sleep(sleep_ms/1000)
+                #sleep_ms = random.randint(0, post_rel_ms)
+                time.sleep(post_rel_ms/1000)
 
             self.record_window = False # Add frames to frame_list when True
 
             if self.q.qsize() != round(self.full_record_ms/self.delta_ms):
                 print("Error: Incorrect queue size: {}".format(self.q.qsize()))
                 return
-
-            frame = list(self.q.queue)  # A list of delta_ms raw byte samples
-            frame_bytes = bytearray([byte for row in frame for byte in row])
-            frames_int = np.frombuffer(frame_bytes, dtype=np.int16)  # convert to int16
-
-            if self.save_wav:
-                self.save_data_as_wav(frame_bytes)
-
-            # Create dictionary for each sample and append to list (used later to create dataframe)
-            record_sample = [{'key': self.key_to_string(key), 'data': frames_int, 'raw': frame_bytes,
-                              'timestamp': datetime.datetime.utcnow()}]
-            self.df_list.extend(record_sample)
-
-            # for i, frame in enumerate(self.frame_list):
-            #
-            #     frame_bytes = bytearray([byte for row in frame for byte in row])
-            #     frames_int = np.frombuffer(frame_bytes, dtype=np.int16) # convert to int16
-            #
-            #     if self.save_wav:
-            #         wav_name = "file" + str(i) + ".wav"
-            #         self.save_data_as_wav(frame_bytes, filename=wav_name)
-            #
-            #     # Create dictionary for each sample and append to list (used later to create dataframe)
-            #     record_sample = [{'key': self.key_to_string(key), 'data': frames_int, 'raw': frame_bytes, 'timestamp': datetime.datetime.utcnow()}]
-            #     self.df_list.extend(record_sample)
-
 
             if self.mode == "Sample":
                 self.sample_ready = True
@@ -162,6 +138,13 @@ class KeyAudio(object):
 
             self.key_cnt += 1 # New keypress recorded
             self.k2k_time = time.time()
+
+            if self.save_wav:
+                for i, df in enumerate(self.df_list):
+                    wav_name = "file" + str(i) + ".wav"
+                    self.save_data_as_wav(df['raw'], filename=wav_name)
+
+
             
     def key_to_string(self, key):
         key_str = ""
@@ -179,9 +162,15 @@ class KeyAudio(object):
             if self.q.qsize() > round(self.full_record_ms/self.delta_ms):
                 self.q.get()
 
-            # if self.record_window:
-            #     frame = list(self.q.queue) # A list of delta_ms raw byte samples
-            #     self.frame_list += [frame]
+            if self.record_window:
+                frame = list(self.q.queue) # A list of delta_ms raw byte samples
+                frame_bytes = bytearray([byte for row in frame for byte in row])
+                frames_int = np.frombuffer(frame_bytes, dtype=np.int16)  # convert to int16
+
+                # Create dictionary for each sample and append to list (used later to create dataframe)
+                record_sample = [{'key': self.key_to_string(self.key), 'data': frames_int, 'raw': frame_bytes,
+                                  'timestamp': datetime.datetime.utcnow()}]
+                self.df_list.extend(record_sample)
 
         # When run complete, stop stream
         self.stream.stop_stream()
