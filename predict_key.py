@@ -70,6 +70,8 @@ with tf.Session() as sess:
 
     count = 1
     correct_cnt = 0
+    key_detection = False
+    prediction_list = []
     while key.running:
         if key.sample_ready == True:
             df = pd.DataFrame.from_records(key.df_list) # Key press audio sample
@@ -86,23 +88,32 @@ with tf.Session() as sess:
             feed_dict = {x: normalized_data, keep_prob: 1.0}
             prediction = sess.run(predicted, feed_dict=feed_dict).squeeze()
 
-            # for i, r in enumerate(prediction):
-            #     actual_key = df['key'].values[i]
-            #     pred_key = labels[np.argmax(r)]
-            #     print('Key: {0}, Prediction: {1}, Probability: {2:0.2f}'.format(actual_key, pred_key,
-            #                                                                     r[np.argmax(r)]))
-            #     if actual_key == pred_key:
-            #         correct_cnt += 1
-            # print('Accuracy: {}'.format(correct_cnt / len(df)))
-
-            #print(prediction)
-            predicted_key = labels[np.argmax(prediction)]
-            print('Prediction: {0}'.format(predicted_key))
+            if len(df) > 1:
+                center = round(len(df)/2)
+                predicted_key = labels[np.argmax(prediction[center])]
+            else:
+                predicted_key = labels[np.argmax(prediction)]
 
             if mode == "Sample":
                 if df['key'].values[0] == predicted_key:
                     correct_cnt += 1
                 print('Count: {0}, Accuracy: {1:0.2f}'.format(count, correct_cnt/count))
+            elif mode == "Continuous":
+                if predicted_key != "continuous":
+                    key_detection = True
+                    prediction_list.extend(key.df_list)
+                else:
+                    if key_detection:
+                        df_list = pd.DataFrame.from_records(prediction_list)
+                        normalized_data = normalize_data(df_list)
+                        feed_dict = {x: normalized_data, keep_prob: 1.0}
+                        predictions = sess.run(predicted, feed_dict=feed_dict).squeeze()
+                        prediction = np.sum(predictions, axis=0)
+                        predicted_key = labels[np.argmax(prediction)]
+
+                        print('Final Prediction: {0}'.format(predicted_key))
+                    key_detection = False
+                    prediction_list = []
 
             # Reset relevant class parameters
             reset_sample()

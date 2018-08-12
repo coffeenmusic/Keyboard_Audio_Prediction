@@ -170,12 +170,16 @@ class KeyAudio(object):
             data = self.stream.read(self.chunk * self.row_size) # Raw data in byte format
             self.q.put(data)
 
+            # FIFO data shifted in, shift out old data
             if self.q.qsize() > round(self.full_record_ms/self.delta_ms):
                 self.q.get()
+            # Ignore downstream actions until FIFO full
+            elif self.q.qsize() < round(self.full_record_ms/self.delta_ms):
+                continue
 
             if self.record_window or self.mode == "Continuous":
                 if self.mode == "Continuous":
-                    if shift_cnt % 10 == 9:
+                    if shift_cnt % 1 == 0:
                         shift_cnt = 0
                         self.key = "continuous"
                         set_ready = True
