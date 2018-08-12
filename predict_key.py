@@ -6,6 +6,16 @@ import os
 import pandas as pd
 import pickle
 import time
+import sys
+
+"""
+"Sample": (Default) Predict key on key press/release event
+"Continuous": Keep predicting key events at a set time interval. Pass in with command line argument
+"""
+mode = "Sample"
+if len(sys.argv) > 1:
+    mode = str(sys.argv[1])
+    print(mode)
 
 dataset_dir = 'DataSet/'
 
@@ -54,7 +64,7 @@ with tf.Session() as sess:
     predicted = graph.get_tensor_by_name("predicted:0")
 
     # Start Listener
-    key = KeyAudio(mode="Sample", save_wav=False)
+    key = KeyAudio(mode=mode, save_wav=False)
     print(key.get_dev_info())
     key.startListener()
 
@@ -85,13 +95,14 @@ with tf.Session() as sess:
             #         correct_cnt += 1
             # print('Accuracy: {}'.format(correct_cnt / len(df)))
 
-            print(prediction)
+            #print(prediction)
             predicted_key = labels[np.argmax(prediction)]
             print('Prediction: {0}'.format(predicted_key))
 
-            if df['key'].values[0] == predicted_key:
-                correct_cnt += 1
-            print('Count: {0}, Accuracy: {1:0.2f}'.format(count, correct_cnt/count))
+            if mode == "Sample":
+                if df['key'].values[0] == predicted_key:
+                    correct_cnt += 1
+                print('Count: {0}, Accuracy: {1:0.2f}'.format(count, correct_cnt/count))
 
             # Reset relevant class parameters
             reset_sample()

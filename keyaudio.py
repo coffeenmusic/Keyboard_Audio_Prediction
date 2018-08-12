@@ -70,7 +70,11 @@ class KeyAudio(object):
         mic_threads.append(t)
         t.start()
 
-        self.start_key_listener()
+        key_threads = []
+        t_k = threading.Thread(target=self.start_key_listener)
+        key_threads.append(t_k)
+        t_k.start()
+        #self.start_key_listener()
 
     def start_key_listener(self):
         with keyboard.Listener(on_press=self.on_press, on_release=self.on_release) as listener:
@@ -161,6 +165,7 @@ class KeyAudio(object):
             
     def log(self):
         shift_cnt = 0
+        set_ready = False
         while self.running:
             data = self.stream.read(self.chunk * self.row_size) # Raw data in byte format
             self.q.put(data)
@@ -173,7 +178,7 @@ class KeyAudio(object):
                     if shift_cnt % 10 == 9:
                         shift_cnt = 0
                         self.key = "continuous"
-                        print(len(self.df_list))
+                        set_ready = True
                     else:
                         shift_cnt += 1
                         continue # Skip saving to dataframe
@@ -186,6 +191,10 @@ class KeyAudio(object):
                 record_sample = [{'key': self.key_to_string(self.key), 'data': frames_int, 'raw': frame_bytes,
                                   'timestamp': datetime.datetime.utcnow()}]
                 self.df_list.extend(record_sample)
+
+                if set_ready:
+                    self.sample_ready = True
+                    set_ready = False
 
         # When run complete, stop stream
         self.stream.stop_stream()
