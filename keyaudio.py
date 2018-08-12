@@ -11,9 +11,12 @@ import queue
 import wave
 import random
 
-
-# save_freq = the number of key presses recorded before saving to disk
-# mode: Default= save samples to disk normally, Sample=don't save to disk, return individual samples
+"""
+save_freq = the number of key presses recorded before saving to disk
+mode:   Default= save samples to disk normally
+        Sample=don't save to disk, return individual samples
+        Continuous= ignore key events, sample continuously
+"""
 class KeyAudio(object):
     def __init__(self, save_freq=500, mode="Default", save_wav=False):
         print("Instantiating...")
@@ -52,9 +55,6 @@ class KeyAudio(object):
         self.sample_ready = False
         self.mode = mode
         self.save_wav = save_wav
-
-        self.k2k_time = time.time() # Time between key presses
-        self.skip_release = False
     
     def get_dev_info(self):
         return self.p.get_default_input_device_info()
@@ -78,12 +78,11 @@ class KeyAudio(object):
       
     # Keyboard Press
     def on_press(self, key):
+        if self.mode == "Continuous":
+            return
+
         if self.released == True:
             self.key = key
-
-            # if (time.time() - self.k2k_time)*1000 < 1:
-            #     self.skip_release = True
-            #     return
 
             self.start_time = time.time()
             self.frame_list = [] # Clear list of frames
@@ -92,16 +91,21 @@ class KeyAudio(object):
             self.record_window = True # Add frames to frame_list when True
             
     def on_release(self, key):
-        if self.skip_release:
-            self.skip_release = False
-            return
         self.released = True
         
         # Escape Pressed
         if key == keyboard.Key.esc:
             self.running = False
+
+            if self.mode == "Continuous":
+                filename = self.dataset_subdir + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + '_c.pkl'
+                self.save_dataframe(filename=filename)
+
             return False # Stop Key Listener
         else:
+            if self.mode == "Continuous":
+                return
+
             # Time between press and release should be less than some delta threshold
             delta_t = time.time() - self.start_time # Time between press and release
             if delta_t > self.max_hold_ms/1000:
@@ -111,17 +115,17 @@ class KeyAudio(object):
             # Don't record data when saving
             if self.saving:
                 return
-            
+
             print(key)
 
             # Keep recording audio for some delta defined after the key is pressed
             post_rel_ms = round(self.full_record_ms - delta_t*1000)
             if post_rel_ms > self.delta_ms:
-                #sleep_ms = random.randint(0, post_rel_ms)
                 time.sleep(post_rel_ms/1000)
 
             self.record_window = False # Add frames to frame_list when True
 
+            # Verify queue size
             if self.q.qsize() != round(self.full_record_ms/self.delta_ms):
                 print("Error: Incorrect queue size: {}".format(self.q.qsize()))
                 return
@@ -137,7 +141,6 @@ class KeyAudio(object):
                 self.save_dataframe(filename=filename)
 
             self.key_cnt += 1 # New keypress recorded
-            self.k2k_time = time.time()
 
             if self.save_wav:
                 for i, df in enumerate(self.df_list):
@@ -150,11 +153,14 @@ class KeyAudio(object):
         key_str = ""
         if str(type(key)) == "<enum 'Key'>":
             key_str = key.name # Type <enum 'Key'
+        elif type(key) == str:
+            key_str = key
         else:
             key_str = key.char # Type pynput.keyboard._win32.KeyCode
         return key_str
             
     def log(self):
+        shift_cnt = 0
         while self.running:
             data = self.stream.read(self.chunk * self.row_size) # Raw data in byte format
             self.q.put(data)
@@ -162,8 +168,17 @@ class KeyAudio(object):
             if self.q.qsize() > round(self.full_record_ms/self.delta_ms):
                 self.q.get()
 
-            if self.record_window:
-                frame = list(self.q.queue) # A list of delta_ms raw byte samples
+            if self.record_window or self.mode == "Continuous":
+                if self.mode == "Continuous":
+                    if shift_cnt % 10 == 9:
+                        shift_cnt = 0
+                        self.key = "continuous"
+                        print(len(self.df_list))
+                    else:
+                        shift_cnt += 1
+                        continue # Skip saving to dataframe
+
+                frame = list(self.q.queue)  # A list of delta_ms raw byte samples
                 frame_bytes = bytearray([byte for row in frame for byte in row])
                 frames_int = np.frombuffer(frame_bytes, dtype=np.int16)  # convert to int16
 
