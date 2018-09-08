@@ -1,10 +1,15 @@
 # Keyboard Audio Predictor
 
 ### predict_key.py
-Run to start predictions. Currently predictions are not made real time, but from samples when key press/release interrupts happen.
+Run to start predictions. Default mode is Continuous which doesn't look at the keyboard's key press/release events
+
+To make predictions and match accuracy against key press/release events, run in Sample mode: predict_key.py Sample
 
 ### get_data.py
 Run to start logging audio from key release events. Hit ESC to exit.
+
+### background_noise.py
+Run to log continous noise to add a 'continuous' class to the database. To create a 'Not a Key' class.
 
 ### Train.ipynb
 Preprocess and train recorded data on a CNN DNN

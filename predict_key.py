@@ -12,7 +12,7 @@ import sys
 "Sample": (Default) Predict key on key press/release event
 "Continuous": Keep predicting key events at a set time interval. Pass in with command line argument
 """
-mode = "Sample"
+mode = "Continuous"
 if len(sys.argv) > 1:
     mode = str(sys.argv[1])
     print(mode)
@@ -97,7 +97,7 @@ with tf.Session() as sess:
             if mode == "Sample":
                 if df['key'].values[0] == predicted_key:
                     correct_cnt += 1
-                print('Count: {0}, Accuracy: {1:0.2f}'.format(count, correct_cnt/count))
+                print('Count: {0}, Accuracy: {1:0.2f}, Prediction: {2}'.format(count, correct_cnt/count, predicted_key))
             elif mode == "Continuous":
                 if predicted_key != "continuous":
                     key_detection = True
